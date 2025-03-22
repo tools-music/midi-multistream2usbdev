@@ -3,7 +3,12 @@
         {
             "name": "Linux",
             "includePath": [
-                "${workspaceFolder}/**"
+                "${workspaceFolder}/**",
+                "${workspaceFolder}/lib/midi_uart_lib",
+                "${workspaceFolder}/lib/pio_midi_uart_lib",
+                "${workspaceFolder}/lib/preprocessor",
+                "${workspaceFolder}/lib/ring_buffer_lib",
+                "${workspaceFolder}/lib/usb_midi_host"
             ],
             "defines": [],
             "compilerPath": "/usr/bin/gcc",
@@ -11,7 +16,9 @@
             "cppStandard": "gnu++14",
             "intelliSenseMode": "linux-gcc-x64",
             "configurationProvider": "ms-vscode.cmake-tools",
-            "compileCommands": "${workspaceFolder}/build/compile_commands.json"
+            "compileCommands": [
+                "${workspaceFolder}/build/compile_commands.json"
+            ]
         }
     ],
     "version": 4

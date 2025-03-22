@@ -30,7 +30,7 @@
 // IN endpoint and one OUT endpoint but permit up to 16 streams per endpoint
 // The TUD_MIDI_MULTI_* macros that follow use the Boost Preprocessor macro library
 // to implement 1-16 virtual cables for the USB IN endpoint
-// and 1-16 virtual cablces for the USB OUT endpoint. It is not necessary
+// and 1-16 virtual cables for the USB OUT endpoint. It is not necessary
 // to make the number of cables for the IN endpoint match the number of cables
 // for the OUT endpoint
 

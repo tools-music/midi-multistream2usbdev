@@ -34,6 +34,18 @@
         "sync.h": "c",
         "uart_midi_lib.h": "c",
         "ring_buffer_lib.h": "c",
-        "midi_device_multistream.h": "c"
+        "midi_device_multistream.h": "c",
+        "*.tcc": "c",
+        "compare": "c",
+        "concepts": "c",
+        "cstdlib": "c",
+        "string_view": "c",
+        "system_error": "c",
+        "cmath": "c",
+        "iostream": "c",
+        "new": "c",
+        "sstream": "c",
+        "tuple": "c",
+        "stdbool.h": "c"
     }
 }
