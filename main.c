@@ -118,7 +118,7 @@ int main(void)
   }
 
   // Create the MIDI PIO UARTs
-  for (size_t n = HW_UART_NUM; n < NUM_MIDI_PORTS - HW_UART_NUM; n++)
+  for (size_t n = HW_UART_NUM; n < NUM_MIDI_PORTS; n++)
   {
     midi_uarts[n] = pio_midi_uart_create(MIDI_TX_GPIO[n], MIDI_RX_GPIO[n]);
     if (midi_uarts[n] == 0)
@@ -306,7 +306,7 @@ static void poll_midi_pio_uart_rx(bool connected)
   uint8_t rx[48];
 
   // MIDI Cables C / D / E / F
-  for (uint8_t cable = HW_UART_NUM; cable < NUM_MIDI_PORTS - HW_UART_NUM; cable++)
+  for (uint8_t cable = HW_UART_NUM; cable < NUM_MIDI_PORTS; cable++)
   {
     uint8_t nread = pio_midi_uart_poll_rx_buffer(midi_uarts[cable], rx, sizeof(rx));
     if (nread > 0 && connected)
@@ -372,7 +372,7 @@ static void midi_pio_uart_task(void)
   }
 
   // Drain PIO serial port TX buffers
-  for (uint8_t cable = HW_UART_NUM; cable < NUM_MIDI_PORTS - HW_UART_NUM; cable++)
+  for (uint8_t cable = HW_UART_NUM; cable < NUM_MIDI_PORTS; cable++)
   {
     pio_midi_uart_drain_tx_buffer(midi_uarts[cable]);
   }
