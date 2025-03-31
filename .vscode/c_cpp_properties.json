@@ -1,24 +1,26 @@
 {
     "configurations": [
         {
-            "name": "Linux",
+            "name": "Pico",
             "includePath": [
                 "${workspaceFolder}/**",
+                "${userHome}/.pico-sdk/sdk/2.1.1/**",
                 "${workspaceFolder}/lib/midi_uart_lib",
                 "${workspaceFolder}/lib/pio_midi_uart_lib",
                 "${workspaceFolder}/lib/preprocessor",
                 "${workspaceFolder}/lib/ring_buffer_lib",
                 "${workspaceFolder}/lib/usb_midi_host"
             ],
+            "forcedInclude": [
+                "${userHome}/.pico-sdk/sdk/2.1.1/src/common/pico_base_headers/include/pico.h",
+                "${workspaceFolder}/build/generated/pico_base/pico/config_autogen.h"
+            ],
             "defines": [],
-            "compilerPath": "/usr/bin/gcc",
-            "cStandard": "gnu17",
-            "cppStandard": "gnu++14",
-            "intelliSenseMode": "linux-gcc-x64",
-            "configurationProvider": "ms-vscode.cmake-tools",
-            "compileCommands": [
-                "${workspaceFolder}/build/compile_commands.json"
-            ]
+            "compilerPath": "${userHome}/.pico-sdk/toolchain/14_2_Rel1/bin/arm-none-eabi-gcc",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
+            "cStandard": "c17",
+            "cppStandard": "c++14",
+            "intelliSenseMode": "linux-gcc-arm"
         }
     ],
     "version": 4

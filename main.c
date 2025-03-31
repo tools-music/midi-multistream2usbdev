@@ -71,7 +71,9 @@ enum
 static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 
 static void led_blinking_task(void);
-static void midi_task(void);
+static void midi_pio_uart_task(void);
+static void midi_hw_uart_task(void);
+static void poll_midi_hw_uart_rx(bool connected);
 
 typedef enum
 {
@@ -98,7 +100,7 @@ static uint8_t midi_dev_addr = 0;
 int main(void)
 {
   board_init();
-  // tusb_init();
+  tusb_init();
   // init device stack on configured roothub port
   tud_init(BOARD_TUD_RHPORT);
 
@@ -130,48 +132,57 @@ int main(void)
   while (1)
   {
     tud_task(); // tinyusb device task
-    // tuh_task();
+    tuh_task(); // tinyusb host task
 
     led_blinking_task();
-    midi_task();
+    midi_pio_uart_task();
+    midi_hw_uart_task();
   }
 }
 
 //--------------------------------------------------------------------+
-// Device callbacks
+// TinyUSB Device callbacks
 //--------------------------------------------------------------------+
-
-// Invoked when device is mounted
+/**
+ * @brief Invoked when device is mounted.
+ */
 void tud_mount_cb(void)
 {
   blink_interval_ms = BLINK_MOUNTED;
 }
 
-// Invoked when device is unmounted
+/**
+ * @brief Invoked when device is unmounted.
+ */
 void tud_umount_cb(void)
 {
   blink_interval_ms = BLINK_NOT_MOUNTED;
 }
 
-// Invoked when usb bus is suspended
-// remote_wakeup_en : if host allow us  to perform remote wakeup
-// Within 7ms, device must draw an average of current less than 2.5 mA from bus
+/**
+ * @brief  Invoked when usb bus is suspended.
+ *
+ * @param remote_wakeup_en if host allow us to perform remote wakeup
+ *                         within 7ms, device must draw an average of
+ *                         current less than 2.5 mA from bus.
+ */
 void tud_suspend_cb(bool remote_wakeup_en)
 {
   (void)remote_wakeup_en;
   blink_interval_ms = BLINK_SUSPENDED;
 }
 
-// Invoked when usb bus is resumed
+/**
+ * @brief Invoked when usb bus is resumed.
+ */
 void tud_resume_cb(void)
 {
   blink_interval_ms = BLINK_MOUNTED;
 }
 
 //--------------------------------------------------------------------+
-// TinyUSB Callbacks
+// TinyUSB Host callbacks
 //--------------------------------------------------------------------+
-
 // Invoked when device with hid interface is mounted
 // Report descriptor is also available for use. tuh_hid_parse_report_descriptor()
 // can be used to parse common/simple enough descriptor.
@@ -193,7 +204,9 @@ void tuh_midi_mount_cb(uint8_t dev_addr, uint8_t in_ep, uint8_t out_ep, uint8_t 
   }
 }
 
-// Invoked when device with hid interface is un-mounted
+/**
+ * @brief Invoked when device with hid interface is un-mounted.
+ */
 void tuh_midi_umount_cb(uint8_t dev_addr, uint8_t instance)
 {
   if (dev_addr == midi_dev_addr)
@@ -207,6 +220,14 @@ void tuh_midi_umount_cb(uint8_t dev_addr, uint8_t instance)
   }
 }
 
+/**
+ * @brief Invoked when data is received from the USB MIDI device.
+ *
+ * @note When the USB Host receives MIDI IN packets from the MIDI device,
+ * this driver calls `tuh_midi_rx_cb()` to notify the application
+ * that MIDI data is available. The application should read that
+ * MIDI data as soon as possible. (ref: usb_midi_host documentation)
+ */
 void tuh_midi_rx_cb(uint8_t dev_addr, uint32_t num_packets)
 {
   if (midi_dev_addr == dev_addr)
@@ -237,29 +258,6 @@ void tuh_midi_rx_cb(uint8_t dev_addr, uint32_t num_packets)
       }
     }
   }
-
-  // if (midi_dev_addr == dev_addr)
-  // {
-  //   if (num_packets != 0)
-  //   {
-  //     uint8_t cable_num;
-  //     uint8_t buffer[48];
-  //     while (1)
-  //     {
-  //       uint32_t bytes_read = tuh_midi_stream_read(dev_addr, &cable_num, buffer, sizeof(buffer));
-  //       if (bytes_read == 0)
-  //         return;
-  //       if (cable_num == 0)
-  //       {
-  //         uint8_t npushed = midi_uart_write_tx_buffer(midi_uart_instance, buffer, bytes_read);
-  //         if (npushed != bytes_read)
-  //         {
-  //           TU_LOG1("Warning: Dropped %lu bytes sending to UART MIDI Out\r\n", bytes_read - npushed);
-  //         }
-  //       }
-  //     }
-  //   }
-  // }
 }
 
 void tuh_midi_tx_cb(uint8_t dev_addr)
@@ -268,20 +266,23 @@ void tuh_midi_tx_cb(uint8_t dev_addr)
 }
 
 //--------------------------------------------------------------------+
-// MIDI Task
+// MIDI HW task
 //--------------------------------------------------------------------+
-static void poll_midi_uarts_rx(bool connected)
+/**
+ * @brief Poll the MIDI UART RX buffer and send any received bytes to the USB MIDI device.
+ *
+ * @param connected true if the USB MIDI device is connected.
+ */
+static void poll_midi_hw_uart_rx(bool connected)
 {
   uint8_t rx[48];
-  uint8_t nread;
-
   // MIDI Cables A / B
   // Pull any bytes received on the MIDI UART out of the receive buffer and
   // send them out via USB MIDI on virtual cable 0
   for (uint8_t cable = 0; cable < HW_UART_NUM; cable++)
   {
-    nread = midi_uart_poll_rx_buffer(midi_uarts[cable], rx, sizeof(rx));
-    if (nread > 0 && connected)
+    uint8_t nread = midi_uart_poll_rx_buffer(midi_uarts[cable], rx, sizeof(rx));
+    if (nread > 0 && connected && tuh_midih_get_num_tx_cables(midi_dev_addr) >= 1)
     {
       uint32_t nwritten = tuh_midi_stream_write(midi_dev_addr, cable, rx, nread);
       if (nwritten != nread)
@@ -290,11 +291,24 @@ static void poll_midi_uarts_rx(bool connected)
       }
     }
   }
+}
+
+//--------------------------------------------------------------------+
+// MIDI PIO task
+//--------------------------------------------------------------------+
+/**
+ * @brief Poll the MIDI PIO UART RX buffer and send any received bytes to the USB MIDI device.
+ *
+ * @param connected true if the USB MIDI device is connected.
+ */
+static void poll_midi_pio_uart_rx(bool connected)
+{
+  uint8_t rx[48];
 
   // MIDI Cables C / D / E / F
   for (uint8_t cable = HW_UART_NUM; cable < NUM_MIDI_PORTS - HW_UART_NUM; cable++)
   {
-    nread = pio_midi_uart_poll_rx_buffer(midi_uarts[cable], rx, sizeof(rx));
+    uint8_t nread = pio_midi_uart_poll_rx_buffer(midi_uarts[cable], rx, sizeof(rx));
     if (nread > 0 && connected)
     {
       uint32_t nwritten = tud_midi_stream_write(cable, rx, nread);
@@ -306,37 +320,16 @@ static void poll_midi_uarts_rx(bool connected)
   }
 }
 
-static void poll_usb_rx(bool connected)
+/**
+ * @brief Poll the USB MIDI device and send any received bytes to the MIDI PIO UART.
+ *
+ * @note This function is called when the USB MIDI device is connected.
+ */
+static void poll_pio_usb_rx(void)
 {
-  // device must be attached and have the endpoint ready to receive a message
-  if (!connected)
-  {
-    return;
-  }
   uint8_t rx[48];
   uint8_t cable_num;
   uint8_t npushed = 0;
-
-  // MIDI Cables A / B
-  // uint32_t nread = tuh_midi_stream_read(midi_dev_addr, &cable_num, rx, sizeof(rx));
-  // while (nread > 0)
-  // {
-  //   if (cable_num < HW_UART_NUM)
-  //   {
-  //     npushed = midi_uart_write_tx_buffer(midi_uarts[cable_num], rx, nread);
-  //   }
-  //   else
-  //   {
-  //     TU_LOG1("Received a MIDI packet on cable %u", cable_num);
-  //     npushed = 0;
-  //     continue;
-  //   }
-  //   if (npushed != nread)
-  //   {
-  //     TU_LOG1("Warning: Dropped %lu bytes sending to MIDI In Port %c\r\n", nread - npushed, 'A' + cable_num);
-  //   }
-  //   nread = tuh_midi_stream_read(midi_dev_addr, &cable_num, rx, sizeof(rx));
-  // }
 
   // MIDI Cables C / D / E / F
   uint32_t nread = tud_midi_demux_stream_read(&cable_num, rx, sizeof(rx));
@@ -361,29 +354,53 @@ static void poll_usb_rx(bool connected)
   }
 }
 
-static void drain_serial_port_tx_buffers()
+//--------------------------------------------------------------------+
+// MIDI UART task (main)
+//--------------------------------------------------------------------+
+/**
+ * @brief MIDI PIO UART task to handle MIDI data transfers between the USB MIDI device and the PIO UARTs.
+ */
+static void midi_pio_uart_task(void)
 {
-  uint8_t cable;
-  for (cable = 0; cable < HW_UART_NUM; cable++)
+  bool connected = tud_midi_mounted();
+  poll_midi_pio_uart_rx(connected);
+
+  // Device must be attached and have the endpoint ready to receive a message
+  if (connected)
   {
-    midi_uart_drain_tx_buffer(midi_uarts[cable]);
+    poll_pio_usb_rx();
   }
-  for (cable = HW_UART_NUM; cable < NUM_MIDI_PORTS - HW_UART_NUM; cable++)
+
+  // Drain PIO serial port TX buffers
+  for (uint8_t cable = HW_UART_NUM; cable < NUM_MIDI_PORTS - HW_UART_NUM; cable++)
   {
     pio_midi_uart_drain_tx_buffer(midi_uarts[cable]);
   }
 }
 
-static void midi_task(void)
+/**
+ * @brief MIDI HW UART task to handle MIDI data transfers between the USB MIDI device and the HW UARTs.
+ */
+static void midi_hw_uart_task(void)
 {
-  bool connected = tud_midi_mounted();
-  poll_midi_uarts_rx(connected);
-  poll_usb_rx(connected);
-  drain_serial_port_tx_buffers();
+  bool connected = midi_dev_addr != 0 && tuh_midi_configured(midi_dev_addr);
+  poll_midi_hw_uart_rx(connected);
+
+  // Device must be attached and have the endpoint ready to receive a message
+  if (connected)
+  {
+    tuh_midi_stream_flush(midi_dev_addr);
+  }
+
+  // Drain HW serial port TX buffers
+  for (uint8_t cable = 0; cable < HW_UART_NUM; cable++)
+  {
+    midi_uart_drain_tx_buffer(midi_uarts[cable]);
+  }
 }
 
 //--------------------------------------------------------------------+
-// BLINKING TASK
+// Blinking task
 //--------------------------------------------------------------------+
 static void led_blinking_task(void)
 {

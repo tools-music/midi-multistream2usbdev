@@ -53,6 +53,13 @@
 #error CFG_TUSB_MCU must be defined
 #endif
 
+#if CFG_TUSB_MCU == OPT_MCU_LPC43XX || CFG_TUSB_MCU == OPT_MCU_LPC18XX || CFG_TUSB_MCU == OPT_MCU_MIMXRT10XX
+  #define CFG_TUSB_RHPORT0_MODE       (OPT_MODE_HOST | OPT_MODE_HIGH_SPEED)
+#else
+  #define CFG_TUSB_RHPORT0_MODE       OPT_MODE_HOST
+#endif
+
+
 #ifndef CFG_TUSB_OS
 #define CFG_TUSB_OS           OPT_OS_NONE
 #endif
@@ -111,6 +118,9 @@
 #define CFG_TUD_MIDI_TX_BUFSIZE   (TUD_OPT_HIGH_SPEED ? 512 : 64)
 
 
+//--------------------------------------------------------------------
+// HOST CONFIGURATION
+//--------------------------------------------------------------------
 
 #define CFG_TUH_ENUMERATION_BUFSIZE 512
 #define CFG_TUH_HUB                 1 // Enable USB hubs
@@ -118,7 +128,6 @@
 #define CFG_TUH_HID                 0 // typical keyboard + mouse device can have 3-4 HID interfaces
 #define CFG_TUH_MSC                 0
 #define CFG_TUH_VENDOR              0
-#define CFG_TUH_MIDI                1
 
 // max device support (excluding hub device)
 #define CFG_TUH_DEVICE_MAX          (CFG_TUH_HUB ? 4 : 1) // hub typically has 4 ports

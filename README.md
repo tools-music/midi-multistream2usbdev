@@ -43,6 +43,10 @@ cmake -DCMAKE_BUILD_TYPE=Debug ..
 make
 ```
 
+```
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug ..
+```
+
 # Harware details
 The MIDI OUT pins all use the pio_midi_uart_lib to simulate open drain
 UART outputs. No buffer chips are required. Wire the MIDI OUT pins
@@ -109,3 +113,18 @@ variables in `tusb_config.h`
 // Support MIDI port string labels after the serial number string
 #define CFG_TUD_MIDI_FIRST_PORT_STRIDX 4
 ```
+
+
+## Troubleshooting
+
+This error indicates that the `picotool` does not have the necessary permissions to access the RP2040 device. Follow these steps to resolve the issue:
+1. **Check USB Permissions**: Ensure your user has the necessary permissions to access USB devices. Create a udev rule for the RP2040 device.
+2. **Create a udev Rule**: Create a file `/etc/udev/rules.d/99-pico.rules` with the following content:
+SUBSYSTEM=="usb", ATTR{idVendor}=="2e8a", ATTR{idProduct}=="0003", MODE="0666"
+3. **Reload udev Rules**: Run the following commands to reload the udev rules:
+sudo udevadm control --reload-rules && sudo udevadm trigger
+4. **Unplug and Replug the Device**: Disconnect and reconnect your RP2040 device to apply the new permissions.
+5. **Run Without sudo**: Try running the `picotool` command again without `sudo`.
+6. **Verify Device Connection**: Use the command `lsusb` to verify that the RP2040 device is detected.
+7. **Check VS Code Build Task**: Ensure the build task in VS Code is correctly configured to use `picotool` with the appropriate permissions.
+
