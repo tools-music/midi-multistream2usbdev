@@ -57,7 +57,7 @@
 #define MIDI_UART_RX_GPIO_2 5 // GPIO pin for UART1 RX
 
 /* Blink pattern
- * - 250 ms  : device not mountedS
+ * - 250 ms  : device not mounted
  * - 1000 ms : device mounted
  * - 2500 ms : device is suspended
  */
