@@ -1,0 +1,9 @@
+Hi @rppicomidi ,
+
+I'd like to build a `6-in/6-out MIDI interface` using the PIO UART and native hardware UART using [pio_midi_uart_lib](https://github.com/rppicomidi/pio_midi_uart_lib) and [midi_uart_lib](https://github.com/rppicomidi/midi_uart_lib).
+
+At first moment, I thought this would be implemented already as you've referenced (https://github.com/Ming-Kerr/midi-multistream2usbdev). Unfortunately, this project is not available any more.
+
+That being said, I'd like to implement it but I have a few questions:
+
+1. I realized that for `pio_midi_uart_lib`, I 
