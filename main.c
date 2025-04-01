@@ -30,6 +30,7 @@
 #include "bsp/board.h"
 #include "tusb.h"
 #include "pio_midi_uart_lib.h"
+#include "midi_uart_lib.h"
 #include "midi_device_multistream.h"
 //--------------------------------------------------------------------+
 // This program routes 5-pin DIN MIDI IN signals A & B to USB MIDI
@@ -40,17 +41,37 @@
 // USB connection state (See below).
 //--------------------------------------------------------------------+
 
-
 //--------------------------------------------------------------------+
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
+// UART selection Pin mapping. You can move these for your design if you want to
+// Make sure all these values are consistent with your choice of midi_uart
+// The default is to use UART 1, but you are free to use UART 0 if you make
+// the changes in the CMakeLists.txt file or in your environment. Note
+// that if you use UART0, then serial port debug will not be enabled
+#ifndef MIDI_UART_NUM
+#define MIDI_UART_NUM 1
+#endif
+#ifndef MIDI_UART_TX_GPIO
+#define MIDI_UART_TX_GPIO 4
+#endif
+#ifndef MIDI_UART_RX_GPIO
+#define MIDI_UART_RX_GPIO 5
+#endif
+
+// Number of PIO UARTs available
+#define PIO_UART_NUM 4
+
+// Number of HW UARTs available
+#define HW_UART_NUM 1
 
 /* Blink pattern
  * - 250 ms  : device not mounted
  * - 1000 ms : device mounted
  * - 2500 ms : device is suspended
  */
-enum  {
+enum
+{
   BLINK_NOT_MOUNTED = 250,
   BLINK_MOUNTED = 1000,
   BLINK_SUSPENDED = 2500,
@@ -61,18 +82,24 @@ static uint32_t blink_interval_ms = BLINK_NOT_MOUNTED;
 static void led_blinking_task(void);
 static void midi_task(void);
 
-static void* midi_uarts[2]; // MIDI IN A, B and MIDI OUT A, B
-static void* midi_outs[4];  // MIDI OUT C-F
 
-// MIDI UART pin usage (Move them if you want to)
-static const uint MIDI_OUT_A_GPIO = 4;
-static const uint MIDI_IN_A_GPIO = 5;
-static const uint MIDI_OUT_B_GPIO = 6;
+// MIDI UART PORTS
+static void *pio_midi_uarts[PIO_UART_NUM];
+static void *hw_midi_uarts[HW_UART_NUM];
+
+// MIDI UART pin usage
+static const uint MIDI_OUT_A_GPIO = 18;
+static const uint MIDI_IN_A_GPIO = 6;
+static const uint MIDI_OUT_B_GPIO = 19;
 static const uint MIDI_IN_B_GPIO = 7;
-static const uint MIDI_OUT_C_GPIO = 10;
-static const uint MIDI_OUT_D_GPIO = 18;
-static const uint MIDI_OUT_E_GPIO = 3;
-static const uint MIDI_OUT_F_GPIO = 27;
+static const uint MIDI_OUT_C_GPIO = 20;
+static const uint MIDI_IN_C_GPIO = 8;
+static const uint MIDI_OUT_D_GPIO = 21;
+static const uint MIDI_IN_D_GPIO = 9;
+
+// MIDI HW UART pin usage
+static const uint MIDI_OUT_E_GPIO = MIDI_UART_TX_GPIO;
+static const uint MIDI_IN_E_GPIO = MIDI_UART_RX_GPIO;
 /*------------- MAIN -------------*/
 int main(void)
 {
@@ -81,15 +108,17 @@ int main(void)
   // init device stack on configured roothub port
   tud_init(BOARD_TUD_RHPORT);
 
-  // Create the MIDI UARTs and MIDI OUTs
-  midi_uarts[0] = pio_midi_uart_create(MIDI_OUT_A_GPIO, MIDI_IN_A_GPIO);
-  midi_uarts[1] = pio_midi_uart_create(MIDI_OUT_B_GPIO, MIDI_IN_B_GPIO);
-  midi_outs[0] = pio_midi_out_create(MIDI_OUT_C_GPIO);
-  midi_outs[1] = pio_midi_out_create(MIDI_OUT_D_GPIO);
-  midi_outs[2] = pio_midi_out_create(MIDI_OUT_E_GPIO);
-  midi_outs[3] = pio_midi_out_create(MIDI_OUT_F_GPIO);
-  printf("2-IN 6-OUT USB MIDI Device adapter\r\n");
-  // 
+  // Create the MIDI PIO UARTs instances
+  pio_midi_uarts[0] = pio_midi_uart_create(MIDI_OUT_A_GPIO, MIDI_IN_A_GPIO);
+  pio_midi_uarts[1] = pio_midi_uart_create(MIDI_OUT_B_GPIO, MIDI_IN_B_GPIO);
+  pio_midi_uarts[2] = pio_midi_uart_create(MIDI_OUT_C_GPIO, MIDI_IN_C_GPIO);
+  pio_midi_uarts[3] = pio_midi_uart_create(MIDI_OUT_D_GPIO, MIDI_IN_D_GPIO);
+
+  // Create the MIDI HW UARTs instances
+  hw_midi_uarts[0] = midi_uart_configure(MIDI_UART_NUM, MIDI_OUT_E_GPIO, MIDI_IN_E_GPIO);
+
+  printf("6-IN 6-OUT USB MIDI Device adapter\r\n");
+  //
   while (1)
   {
     tud_task(); // tinyusb device task
@@ -119,7 +148,7 @@ void tud_umount_cb(void)
 // Within 7ms, device must draw an average of current less than 2.5 mA from bus
 void tud_suspend_cb(bool remote_wakeup_en)
 {
-  (void) remote_wakeup_en;
+  (void)remote_wakeup_en;
   blink_interval_ms = BLINK_SUSPENDED;
 }
 
@@ -134,70 +163,98 @@ void tud_resume_cb(void)
 //--------------------------------------------------------------------+
 static void poll_midi_uarts_rx(bool connected)
 {
-    uint8_t rx[48];
-    // Pull any bytes received on the MIDI UART out of the receive buffer and
-    // send them out via USB MIDI on virtual cable 0
-    for (uint8_t cable = 0; cable < 2; cable++) {
-        uint8_t nread = pio_midi_uart_poll_rx_buffer(midi_uarts[cable], rx, sizeof(rx));
-        if (nread > 0 && connected)
-        {
-            uint32_t nwritten = tud_midi_stream_write(cable, rx, nread);
-            if (nwritten != nread) {
-                TU_LOG1("Warning: Dropped %lu bytes receiving from UART MIDI In %c\r\n", nread - nwritten, 'A'+cable);
-            }
-        }
+  uint8_t rx[48];
+  // Pull any bytes received on the MIDI UART out of the receive buffer and
+  // send them out via USB MIDI on virtual cable 0
+  for (uint8_t cable = 0; cable < PIO_UART_NUM; cable++)
+  {
+    uint8_t nread = pio_midi_uart_poll_rx_buffer(pio_midi_uarts[cable], rx, sizeof(rx));
+    if (nread > 0 && connected)
+    {
+      uint32_t nwritten = tud_midi_stream_write(cable, rx, nread);
+      if (nwritten != nread)
+      {
+        TU_LOG1("Warning: Dropped %lu bytes receiving from UART MIDI In %c\r\n", nread - nwritten, 'A' + cable);
+      }
     }
-    
+  }
+
+  for (uint8_t cable = 0; cable < HW_UART_NUM; cable++)
+  {
+    uint8_t nread = midi_uart_poll_rx_buffer(hw_midi_uarts[cable], rx, sizeof(rx));
+    if (nread > 0 && connected)
+    {
+      uint32_t nwritten = tud_midi_stream_write(cable + PIO_UART_NUM, rx, nread);
+      if (nwritten != nread)
+      {
+        TU_LOG1("Warning: Dropped %lu bytes receiving from UART MIDI In %c\r\n", nread - nwritten, 'A' + cable + PIO_UART_NUM);
+      }
+    }
+  }
 }
 
 static void poll_usb_rx(bool connected)
 {
-    // device must be attached and have the endpoint ready to receive a message
-    if (!connected)
+  // device must be attached and have the endpoint ready to receive a message
+  if (!connected)
+  {
+    return;
+  }
+  uint8_t rx[48];
+  uint8_t cable_num;
+  uint8_t npushed = 0;
+  uint32_t nread = tud_midi_demux_stream_read(&cable_num, rx, sizeof(rx));
+  while (nread > 0)
+  {
+    if (cable_num < PIO_UART_NUM)
     {
-        return;
+      // then it is MIDI OUT A / B / C / D
+      npushed = pio_midi_uart_write_tx_buffer(pio_midi_uarts[cable_num], rx, nread);
     }
-    uint8_t rx[48];
-    uint8_t cable_num;
-    uint8_t npushed = 0;
-    uint32_t nread =  tud_midi_demux_stream_read(&cable_num, rx, sizeof(rx));
-    while (nread > 0) {
-        if (cable_num < 2) {
-            // then it is MIDI OUT A or B
-            npushed = pio_midi_uart_write_tx_buffer(midi_uarts[cable_num], rx, nread);
-        }
-        else if (cable_num < 6) {
-            // then it is MIDI OUT C, D, E or F
-            npushed = pio_midi_out_write_tx_buffer(midi_outs[cable_num-2], rx, nread);
-        }
-        else {
-            TU_LOG1("Received a MIDI packet on cable %u", cable_num);
-            npushed = 0;
-            continue;
-        }
-        if (npushed != nread) {
-            TU_LOG1("Warning: Dropped %lu bytes sending to MIDI Out Port %c\r\n", nread - npushed, 'A' + cable_num);
-        }
-        nread =  tud_midi_demux_stream_read(&cable_num, rx, sizeof(rx));
+    else if (cable_num < PIO_UART_NUM + HW_UART_NUM)
+    {
+      // then it is MIDI OUT E
+      npushed = midi_uart_write_tx_buffer(hw_midi_uarts[cable_num - PIO_UART_NUM], rx, nread);
     }
+    else
+    {
+      // then it is an invalid cable number
+      TU_LOG1("Invalid cable number %u\r\n", cable_num);
+      nread = tud_midi_demux_stream_read(&cable_num, rx, sizeof(rx));
+      continue;
+    }
+    {
+      TU_LOG1("Received a MIDI packet on cable %u", cable_num);
+      npushed = 0;
+      continue;
+    }
+    if (npushed != nread)
+    {
+      TU_LOG1("Warning: Dropped %lu bytes sending to MIDI Out Port %c\r\n", nread - npushed, 'A' + cable_num);
+    }
+    nread = tud_midi_demux_stream_read(&cable_num, rx, sizeof(rx));
+  }
 }
 
 static void drain_serial_port_tx_buffers()
 {
-    uint8_t cable;
-    for (cable = 0; cable < 2; cable++) {
-        pio_midi_uart_drain_tx_buffer(midi_uarts[cable]);
-    }
-    for (cable = 2; cable < 6; cable++) {
-        pio_midi_out_drain_tx_buffer(midi_outs[cable-2]);
-    }
+  uint8_t cable;
+  for (cable = 0; cable < PIO_UART_NUM; cable++)
+  {
+    pio_midi_uart_drain_tx_buffer(pio_midi_uarts[cable]);
+  }
+  for (cable = 0; cable < HW_UART_NUM; cable++)
+  {
+    midi_uart_drain_tx_buffer(hw_midi_uarts[cable]);
+  }
 }
+
 static void midi_task(void)
 {
-    bool connected = tud_midi_mounted();
-    poll_midi_uarts_rx(connected);
-    poll_usb_rx(connected);
-    drain_serial_port_tx_buffers();
+  bool connected = tud_midi_mounted();
+  poll_midi_uarts_rx(connected);
+  poll_usb_rx(connected);
+  drain_serial_port_tx_buffers();
 }
 
 //--------------------------------------------------------------------+
@@ -209,7 +266,8 @@ static void led_blinking_task(void)
   static bool led_state = false;
 
   // Blink every interval ms
-  if ( board_millis() - start_ms < blink_interval_ms) return; // not enough time
+  if (board_millis() - start_ms < blink_interval_ms)
+    return; // not enough time
   start_ms += blink_interval_ms;
 
   board_led_write(led_state);
