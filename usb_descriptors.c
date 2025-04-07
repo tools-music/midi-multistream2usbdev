@@ -144,16 +144,12 @@ char const *string_desc_arr[] =
         "TinyUSB",                  // 1: Manufacturer
         "TinyUSB Device",           // 2: Product
         "123456",                   // 3: Serials, should use chip ID
-        "MIDI IN A",
-        "MIDI IN B",
-        "MIDI IN C",
-        "MIDI IN D",
-        "MIDI IN E",
-        "MIDI OUT A",
-        "MIDI OUT B",
-        "MIDI OUT C",
-        "MIDI OUT D",
-        "MIDI OUT E",
+        "MIDI A",
+        "MIDI B",
+        "MIDI C",
+        "MIDI D",
+        "MIDI E",
+        "MIDI F",
 };
 
 static uint16_t _desc_str[32];

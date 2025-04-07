@@ -43,6 +43,12 @@ cmake -DCMAKE_BUILD_TYPE=Debug ..
 make
 ```
 
+To build the project using RPi Pico extension on VSCode.
+
+```
+cmake -G Ninja -DCMAKE_BUILD_TYPE=Debug ..
+```
+
 # Harware details
 The MIDI OUT pins all use the pio_midi_uart_lib to simulate open drain
 UART outputs. No buffer chips are required. Wire the MIDI OUT pins

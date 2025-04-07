@@ -45,13 +45,14 @@
 // MACRO CONSTANT TYPEDEF PROTYPES
 //--------------------------------------------------------------------+
 // UART selection Pin mapping. You can move these for your design if you want to
-// Make sure all these values are consistent with your choice of midi_uart
+// make sure all these values are consistent with your choice of midi_uart
 // The default is to use UART 1, but you are free to use UART 0 if you make
 // the changes in the CMakeLists.txt file or in your environment. Note
 // that if you use UART0, then serial port debug will not be enabled
-#ifndef MIDI_UART_NUM
-#define MIDI_UART_NUM 1
-#endif
+
+// #ifndef MIDI_UART_NUM
+// #define MIDI_UART_NUM 1
+// #endif
 #ifndef MIDI_UART_TX_GPIO
 #define MIDI_UART_TX_GPIO 4
 #endif
@@ -59,11 +60,21 @@
 #define MIDI_UART_RX_GPIO 5
 #endif
 
+// HW MIDI UART 0 GPIO
+#ifndef MIDI_UART_0_TX_GPIO
+#define MIDI_UART_0_TX_GPIO 0
+#endif
+#ifndef MIDI_UART_0_RX_GPIO
+#define MIDI_UART_0_RX_GPIO 1
+#endif
+
+
 // Number of PIO UARTs available
 #define PIO_UART_NUM 4
 
 // Number of HW UARTs available
-#define HW_UART_NUM 1
+// #define HW_UART_NUM 1 // Switch to 1 when debugging. HW UART 0 is used for debug.
+#define HW_UART_NUM 2 // 2 HW UARTs available.
 
 /* Blink pattern
  * - 250 ms  : device not mounted
@@ -100,6 +111,8 @@ static const uint MIDI_IN_D_GPIO = 9;
 // MIDI HW UART pin usage
 static const uint MIDI_OUT_E_GPIO = MIDI_UART_TX_GPIO;
 static const uint MIDI_IN_E_GPIO = MIDI_UART_RX_GPIO;
+static const uint MIDI_OUT_F_GPIO = MIDI_UART_0_TX_GPIO;
+static const uint MIDI_IN_F_GPIO = MIDI_UART_0_RX_GPIO;
 /*------------- MAIN -------------*/
 int main(void)
 {
@@ -115,7 +128,8 @@ int main(void)
   pio_midi_uarts[3] = pio_midi_uart_create(MIDI_OUT_D_GPIO, MIDI_IN_D_GPIO);
 
   // Create the MIDI HW UARTs instances
-  hw_midi_uarts[0] = midi_uart_configure(MIDI_UART_NUM, MIDI_OUT_E_GPIO, MIDI_IN_E_GPIO);
+  hw_midi_uarts[0] = midi_uart_configure(1, MIDI_OUT_E_GPIO, MIDI_IN_E_GPIO);
+  hw_midi_uarts[1] = midi_uart_configure(0, MIDI_OUT_F_GPIO, MIDI_IN_F_GPIO);
 
   printf("6-IN 6-OUT USB MIDI Device adapter\r\n");
   //
@@ -165,29 +179,36 @@ static void poll_midi_uarts_rx(bool connected)
 {
   uint8_t rx[48];
   // Pull any bytes received on the MIDI UART out of the receive buffer and
-  // send them out via USB MIDI on virtual cable 0
+  // send them out via USB MIDI on virtual cables 0-5
+
+  // PIO UARTs (0-3)
   for (uint8_t cable = 0; cable < PIO_UART_NUM; cable++)
   {
+    TU_LOG1(">>> Checking MIDI PIO UART %u\r\n", cable);
     uint8_t nread = pio_midi_uart_poll_rx_buffer(pio_midi_uarts[cable], rx, sizeof(rx));
     if (nread > 0 && connected)
     {
+      TU_LOG1("Received %u bytes from MIDI PIO UART %c\r\n", nread, 'A' + cable);
       uint32_t nwritten = tud_midi_stream_write(cable, rx, nread);
       if (nwritten != nread)
       {
-        TU_LOG1("Warning: Dropped %lu bytes receiving from UART MIDI In %c\r\n", nread - nwritten, 'A' + cable);
+        TU_LOG1("Warning: Dropped %lu bytes receiving from UART PIO MIDI In %c\r\n", nread - nwritten, 'A' + cable);
       }
     }
   }
 
-  for (uint8_t cable = 0; cable < HW_UART_NUM; cable++)
+  // Native UARTs (4-5)
+  for (uint8_t cable_hw = 0; cable_hw < HW_UART_NUM; cable_hw++)
   {
-    uint8_t nread = midi_uart_poll_rx_buffer(hw_midi_uarts[cable], rx, sizeof(rx));
+    TU_LOG1(">>> Checking MIDI native UART %u\r\n", cable_hw);
+    uint8_t nread = midi_uart_poll_rx_buffer(hw_midi_uarts[cable_hw], rx, sizeof(rx));
     if (nread > 0 && connected)
     {
-      uint32_t nwritten = tud_midi_stream_write(cable + PIO_UART_NUM, rx, nread);
+      TU_LOG1("Received %u bytes from MIDI native UART %c\r\n", nread, 'A' + cable_hw + PIO_UART_NUM);
+      uint32_t nwritten = tud_midi_stream_write(cable_hw + PIO_UART_NUM, rx, nread);
       if (nwritten != nread)
       {
-        TU_LOG1("Warning: Dropped %lu bytes receiving from UART MIDI In %c\r\n", nread - nwritten, 'A' + cable + PIO_UART_NUM);
+        TU_LOG1("Warning: Dropped %lu bytes receiving from UART HW MIDI In %c\r\n", nread - nwritten, 'A' + cable_hw + PIO_UART_NUM);
       }
     }
   }
@@ -204,8 +225,10 @@ static void poll_usb_rx(bool connected)
   uint8_t cable_num;
   uint8_t npushed = 0;
   uint32_t nread = tud_midi_demux_stream_read(&cable_num, rx, sizeof(rx));
+  TU_LOG1(">>> Checking USB MIDI OUT. %lu bytes on cable %u\r\n", nread, cable_num);
   while (nread > 0)
   {
+    TU_LOG1("Received %lu bytes on cable %u\r\n", nread, cable_num);
     if (cable_num < PIO_UART_NUM)
     {
       // then it is MIDI OUT A / B / C / D
@@ -218,16 +241,11 @@ static void poll_usb_rx(bool connected)
     }
     else
     {
-      // then it is an invalid cable number
-      TU_LOG1("Invalid cable number %u\r\n", cable_num);
-      nread = tud_midi_demux_stream_read(&cable_num, rx, sizeof(rx));
-      continue;
-    }
-    {
       TU_LOG1("Received a MIDI packet on cable %u", cable_num);
       npushed = 0;
       continue;
     }
+
     if (npushed != nread)
     {
       TU_LOG1("Warning: Dropped %lu bytes sending to MIDI Out Port %c\r\n", nread - npushed, 'A' + cable_num);

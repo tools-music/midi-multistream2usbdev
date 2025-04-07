@@ -41,6 +41,7 @@
         "ring_buffer_lib.h": "c",
         "pio_midi_uart.pio.h": "c",
         "tusb.h": "c",
-        "midi_device_multistream.h": "c"
+        "midi_device_multistream.h": "c",
+        "variant": "c"
     }
 }

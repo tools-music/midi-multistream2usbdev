@@ -17,6 +17,10 @@ set(PICO_BOARD pico CACHE STRING "Board type")
 cmake_minimum_required(VERSION 3.13)
 
 set(BOARD pico_sdk)
+
+# Debug flag. Uncomment and rebuild the code to see debug messages throughout the serial console.
+# set(LOG 1)
+
 include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
 project(midi-multstream2usbdev C CXX ASM)
